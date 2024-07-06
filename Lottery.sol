@@ -1,165 +1,262 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.4;
+// An example of a consumer contract that relies on a subscription for funding.
+pragma solidity ^0.8.19;
 
-import {IVRFCoordinatorV2Plus} from "./interfaces/IVRFCoordinatorV2Plus.sol";
-import {IVRFMigratableConsumerV2Plus} from "./interfaces/IVRFMigratableConsumerV2Plus.sol";
-import {ConfirmedOwner} from "../../shared/access/ConfirmedOwner.sol";
+import {VRFConsumerBaseV2Plus} from "@chainlink/contracts/src/v0.8/vrf/dev/VRFConsumerBaseV2Plus.sol";
+import {VRFV2PlusClient} from "@chainlink/contracts/src/v0.8/vrf/dev/libraries/VRFV2PlusClient.sol";
 
-/** ****************************************************************************
- * @notice Interface for contracts using VRF randomness
- * *****************************************************************************
- * @dev PURPOSE
- *
- * @dev Reggie the Random Oracle (not his real job) wants to provide randomness
- * @dev to Vera the verifier in such a way that Vera can be sure he's not
- * @dev making his output up to suit himself. Reggie provides Vera a public key
- * @dev to which he knows the secret key. Each time Vera provides a seed to
- * @dev Reggie, he gives back a value which is computed completely
- * @dev deterministically from the seed and the secret key.
- *
- * @dev Reggie provides a proof by which Vera can verify that the output was
- * @dev correctly computed once Reggie tells it to her, but without that proof,
- * @dev the output is indistinguishable to her from a uniform random sample
- * @dev from the output space.
- *
- * @dev The purpose of this contract is to make it easy for unrelated contracts
- * @dev to talk to Vera the verifier about the work Reggie is doing, to provide
- * @dev simple access to a verifiable source of randomness. It ensures 2 things:
- * @dev 1. The fulfillment came from the VRFCoordinatorV2Plus.
- * @dev 2. The consumer contract implements fulfillRandomWords.
- * *****************************************************************************
- * @dev USAGE
- *
- * @dev Calling contracts must inherit from VRFConsumerBaseV2Plus, and can
- * @dev initialize VRFConsumerBaseV2Plus's attributes in their constructor as
- * @dev shown:
- *
- * @dev   contract VRFConsumerV2Plus is VRFConsumerBaseV2Plus {
- * @dev     constructor(<other arguments>, address _vrfCoordinator, address _subOwner)
- * @dev       VRFConsumerBaseV2Plus(_vrfCoordinator, _subOwner) public {
- * @dev         <initialization with other arguments goes here>
- * @dev       }
- * @dev   }
- *
- * @dev The oracle will have given you an ID for the VRF keypair they have
- * @dev committed to (let's call it keyHash). Create a subscription, fund it
- * @dev and your consumer contract as a consumer of it (see VRFCoordinatorInterface
- * @dev subscription management functions).
- * @dev Call requestRandomWords(keyHash, subId, minimumRequestConfirmations,
- * @dev callbackGasLimit, numWords, extraArgs),
- * @dev see (IVRFCoordinatorV2Plus for a description of the arguments).
- *
- * @dev Once the VRFCoordinatorV2Plus has received and validated the oracle's response
- * @dev to your request, it will call your contract's fulfillRandomWords method.
- *
- * @dev The randomness argument to fulfillRandomWords is a set of random words
- * @dev generated from your requestId and the blockHash of the request.
- *
- * @dev If your contract could have concurrent requests open, you can use the
- * @dev requestId returned from requestRandomWords to track which response is associated
- * @dev with which randomness request.
- * @dev See "SECURITY CONSIDERATIONS" for principles to keep in mind,
- * @dev if your contract could have multiple requests in flight simultaneously.
- *
- * @dev Colliding `requestId`s are cryptographically impossible as long as seeds
- * @dev differ.
- *
- * *****************************************************************************
- * @dev SECURITY CONSIDERATIONS
- *
- * @dev A method with the ability to call your fulfillRandomness method directly
- * @dev could spoof a VRF response with any random value, so it's critical that
- * @dev it cannot be directly called by anything other than this base contract
- * @dev (specifically, by the VRFConsumerBaseV2Plus.rawFulfillRandomness method).
- *
- * @dev For your users to trust that your contract's random behavior is free
- * @dev from malicious interference, it's best if you can write it so that all
- * @dev behaviors implied by a VRF response are executed *during* your
- * @dev fulfillRandomness method. If your contract must store the response (or
- * @dev anything derived from it) and use it later, you must ensure that any
- * @dev user-significant behavior which depends on that stored value cannot be
- * @dev manipulated by a subsequent VRF request.
- *
- * @dev Similarly, both miners and the VRF oracle itself have some influence
- * @dev over the order in which VRF responses appear on the blockchain, so if
- * @dev your contract could have multiple VRF requests in flight simultaneously,
- * @dev you must ensure that the order in which the VRF responses arrive cannot
- * @dev be used to manipulate your contract's user-significant behavior.
- *
- * @dev Since the block hash of the block which contains the requestRandomness
- * @dev call is mixed into the input to the VRF *last*, a sufficiently powerful
- * @dev miner could, in principle, fork the blockchain to evict the block
- * @dev containing the request, forcing the request to be included in a
- * @dev different block with a different hash, and therefore a different input
- * @dev to the VRF. However, such an attack would incur a substantial economic
- * @dev cost. This cost scales with the number of blocks the VRF oracle waits
- * @dev until it calls responds to a request. It is for this reason that
- * @dev that you can signal to an oracle you'd like them to wait longer before
- * @dev responding to the request (however this is not enforced in the contract
- * @dev and so remains effective only in the case of unmodified oracle software).
- */
-abstract contract VRFConsumerBaseV2Plus is IVRFMigratableConsumerV2Plus, ConfirmedOwner {
-  error OnlyCoordinatorCanFulfill(address have, address want);
-  error OnlyOwnerOrCoordinator(address have, address owner, address coordinator);
-  error ZeroAddress();
+// /**
+//  * Request testnet LINK and ETH here: https://faucets.chain.link/
+//  * Find information on LINK Token Contracts and get the latest ETH and LINK faucets here: https://docs.chain.link/docs/link-token-contracts/
+//  */
 
-  // s_vrfCoordinator should be used by consumers to make requests to vrfCoordinator
-  // so that coordinator reference is updated after migration
-  IVRFCoordinatorV2Plus public s_vrfCoordinator;
+// /**
+//  * THIS IS AN EXAMPLE CONTRACT THAT USES HARDCODED VALUES FOR CLARITY.
+//  * THIS IS AN EXAMPLE CONTRACT THAT USES UN-AUDITED CODE.
+//  * DO NOT USE THIS CODE IN PRODUCTION.
+//  */
 
-  /**
-   * @param _vrfCoordinator address of VRFCoordinator contract
-   */
-  constructor(address _vrfCoordinator) ConfirmedOwner(msg.sender) {
-    if (_vrfCoordinator == address(0)) {
-      revert ZeroAddress();
+// contract SubscriptionConsumer is VRFConsumerBaseV2Plus {
+//     event RequestSent(uint256 requestId, uint32 numWords);
+//     event RequestFulfilled(uint256 requestId, uint256[] randomWords);
+
+//     struct RequestStatus {
+//         bool fulfilled; // whether the request has been successfully fulfilled
+//         bool exists; // whether a requestId exists
+//         uint256[] randomWords;
+//     }
+//     mapping(uint256 => RequestStatus)
+//         public s_requests; /* requestId --> requestStatus */
+
+//     // Your subscription ID.
+//     uint256 public s_subscriptionId;
+
+//     // Past request IDs.
+//     uint256[] public requestIds;
+//     uint256 public lastRequestId;
+
+//     // The gas lane to use, which specifies the maximum gas price to bump to.
+//     // For a list of available gas lanes on each network,
+//     // see https://docs.chain.link/docs/vrf/v2-5/supported-networks
+//     bytes32 public keyHash =
+//         0x787d74caea10b2b357790d5b5247c2f63d1d91572a9846f780606e4d953677ae;
+
+//     // Depends on the number of requested values that you want sent to the
+//     // fulfillRandomWords() function. Storing each word costs about 20,000 gas,
+//     // so 100,000 is a safe default for this example contract. Test and adjust
+//     // this limit based on the network that you select, the size of the request,
+//     // and the processing of the callback request in the fulfillRandomWords()
+//     // function.
+//     uint32 public callbackGasLimit = 100000;
+
+//     // The default is 3, but you can set this higher.
+//     uint16 public requestConfirmations = 3;
+
+//     // For this example, retrieve 2 random values in one request.
+//     // Cannot exceed VRFCoordinatorV2_5.MAX_NUM_WORDS.
+//     uint32 public numWords = 2;
+
+//     /**
+//      * HARDCODED FOR SEPOLIA
+//      * COORDINATOR: 0x9DdfaCa8183c41ad55329BdeeD9F6A8d53168B1B
+//      */
+//     constructor(
+//         uint256 subscriptionId
+//     ) VRFConsumerBaseV2Plus(0x9DdfaCa8183c41ad55329BdeeD9F6A8d53168B1B) {
+//         s_subscriptionId = subscriptionId;
+//     }
+
+//     // Assumes the subscription is funded sufficiently.
+//     // @param enableNativePayment: Set to `true` to enable payment in native tokens, or
+//     // `false` to pay in LINK
+//     function requestRandomWords(
+//         bool enableNativePayment
+//     ) external onlyOwner returns (uint256 requestId) {
+//         // Will revert if subscription is not set and funded.
+//         requestId = s_vrfCoordinator.requestRandomWords(
+//             VRFV2PlusClient.RandomWordsRequest({
+//                 keyHash: keyHash,
+//                 subId: s_subscriptionId,
+//                 requestConfirmations: requestConfirmations,
+//                 callbackGasLimit: callbackGasLimit,
+//                 numWords: numWords,
+//                 extraArgs: VRFV2PlusClient._argsToBytes(
+//                     VRFV2PlusClient.ExtraArgsV1({
+//                         nativePayment: enableNativePayment
+//                     })
+//                 )
+//             })
+//         );
+//         s_requests[requestId] = RequestStatus({
+//             randomWords: new uint256[](0),
+//             exists: true,
+//             fulfilled: false
+//         });
+//         requestIds.push(requestId);
+//         lastRequestId = requestId;
+//         emit RequestSent(requestId, numWords);
+//         return requestId;
+//     }
+
+
+
+
+//     function fulfillRandomWords(
+//         uint256 _requestId,
+//         uint256[] calldata _randomWords
+//     ) internal override {
+//         require(s_requests[_requestId].exists, "request not found");
+//         s_requests[_requestId].fulfilled = true;
+//         s_requests[_requestId].randomWords = _randomWords;
+//         emit RequestFulfilled(_requestId, _randomWords);
+//     }
+
+//     function getRequestStatus(
+//         uint256 _requestId
+//     ) external view returns (bool fulfilled, uint256[] memory randomWords) {
+//         require(s_requests[_requestId].exists, "request not found");
+//         RequestStatus memory request = s_requests[_requestId];
+//         return (request.fulfilled, request.randomWords);
+//     }
+// }
+
+
+contract Lottery is VRFConsumerBaseV2Plus {
+
+    event RequestSent(uint256 requestId, uint32 numWords);
+    event RequestFulfilled(uint256 requestId, uint256[] randomWords);
+
+    struct RequestStatus {
+        bool fulfilled; // whether the request has been successfully fulfilled
+        bool exists; // whether a requestId exists
+        uint256[] randomWords;
     }
-    s_vrfCoordinator = IVRFCoordinatorV2Plus(_vrfCoordinator);
-  }
+    mapping(uint256 => RequestStatus)
+        public s_requests; /* requestId --> requestStatus */
 
-  /**
-   * @notice fulfillRandomness handles the VRF response. Your contract must
-   * @notice implement it. See "SECURITY CONSIDERATIONS" above for important
-   * @notice principles to keep in mind when implementing your fulfillRandomness
-   * @notice method.
-   *
-   * @dev VRFConsumerBaseV2Plus expects its subcontracts to have a method with this
-   * @dev signature, and will call it once it has verified the proof
-   * @dev associated with the randomness. (It is triggered via a call to
-   * @dev rawFulfillRandomness, below.)
-   *
-   * @param requestId The Id initially returned by requestRandomness
-   * @param randomWords the VRF output expanded to the requested number of words
-   */
-  // solhint-disable-next-line chainlink-solidity/prefix-internal-functions-with-underscore
-  function fulfillRandomWords(uint256 requestId, uint256[] calldata randomWords) internal virtual;
+    // Your subscription ID.
+    uint256 public s_subscriptionId;
 
-  // rawFulfillRandomness is called by VRFCoordinator when it receives a valid VRF
-  // proof. rawFulfillRandomness then calls fulfillRandomness, after validating
-  // the origin of the call
-  function rawFulfillRandomWords(uint256 requestId, uint256[] calldata randomWords) external {
-    if (msg.sender != address(s_vrfCoordinator)) {
-      revert OnlyCoordinatorCanFulfill(msg.sender, address(s_vrfCoordinator));
+    // Past request IDs.
+    uint256[] public requestIds;
+    uint256 public lastRequestId;
+
+    // The gas lane to use, which specifies the maximum gas price to bump to.
+    // For a list of available gas lanes on each network,
+    // see https://docs.chain.link/docs/vrf/v2-5/supported-networks
+    bytes32 public keyHash =
+        0x787d74caea10b2b357790d5b5247c2f63d1d91572a9846f780606e4d953677ae;
+
+    // Depends on the number of requested values that you want sent to the
+    // fulfillRandomWords() function. Storing each word costs about 20,000 gas,
+    // so 100,000 is a safe default for this example contract. Test and adjust
+    // this limit based on the network that you select, the size of the request,
+    // and the processing of the callback request in the fulfillRandomWords()
+    // function.
+    uint32 public callbackGasLimit = 100000;
+
+    // The default is 3, but you can set this higher.
+    uint16 public requestConfirmations = 3;
+
+    // For this example, retrieve 2 random values in one request.
+    // Cannot exceed VRFCoordinatorV2_5.MAX_NUM_WORDS.
+    uint32 public numWords = 2;
+
+
+
+    address public _owner;
+
+
+    address payable[] public players;
+    uint public lotteryId;
+    mapping (uint => address payable) public lotteryHistory;
+
+    constructor(
+        uint256 subscriptionId
+    ) VRFConsumerBaseV2Plus(0x9DdfaCa8183c41ad55329BdeeD9F6A8d53168B1B) {
+        s_subscriptionId = subscriptionId;
+        _owner = msg.sender;
+        lotteryId = 1;
     }
-    fulfillRandomWords(requestId, randomWords);
-  }
 
-  /**
-   * @inheritdoc IVRFMigratableConsumerV2Plus
-   */
-  function setCoordinator(address _vrfCoordinator) external override onlyOwnerOrCoordinator {
-    if (_vrfCoordinator == address(0)) {
-      revert ZeroAddress();
+    function getWinnerByLottery(uint lottery) public view returns (address payable) {
+        return lotteryHistory[lottery];
     }
-    s_vrfCoordinator = IVRFCoordinatorV2Plus(_vrfCoordinator);
 
-    emit CoordinatorSet(_vrfCoordinator);
-  }
-
-  modifier onlyOwnerOrCoordinator() {
-    if (msg.sender != owner() && msg.sender != address(s_vrfCoordinator)) {
-      revert OnlyOwnerOrCoordinator(msg.sender, owner(), address(s_vrfCoordinator));
+    function getBalance() public view returns (uint) {
+        return address(this).balance;
     }
-    _;
-  }
+
+    function getPlayers() public view returns (address payable[] memory) {
+        return players;
+    }
+
+    function enter() public payable {
+        require(msg.value > .001 ether);
+        players.push(payable(msg.sender));
+    }
+
+    function getRandomNumber() public view returns (uint) {
+        return uint(keccak256(abi.encodePacked(_owner, block.timestamp)));
+    }
+
+    function pickWinner() public onlyowner {
+        uint index = requestRandomWords(true) % players.length;
+        players[index].transfer(address(this).balance);
+
+        lotteryHistory[lotteryId] = players[index];
+        lotteryId++;
+       
+
+        // reset the state of the contract
+        players = new address payable[](0);
+    }
+
+
+
+    function requestRandomWords(
+        bool enableNativePayment
+    ) public onlyOwner returns (uint256 requestId) {
+        // Will revert if subscription is not set and funded.
+        requestId = s_vrfCoordinator.requestRandomWords(
+            VRFV2PlusClient.RandomWordsRequest({
+                keyHash: keyHash,
+                subId: s_subscriptionId,
+                requestConfirmations: requestConfirmations,
+                callbackGasLimit: callbackGasLimit,
+                numWords: numWords,
+                extraArgs: VRFV2PlusClient._argsToBytes(
+                    VRFV2PlusClient.ExtraArgsV1({
+                        nativePayment: enableNativePayment
+                    })
+                )
+            })
+        );
+        s_requests[requestId] = RequestStatus({
+            randomWords: new uint256[](0),
+            exists: true,
+            fulfilled: false
+        });
+        requestIds.push(requestId);
+        lastRequestId = requestId;
+        emit RequestSent(requestId, numWords);
+        return requestId;
+    }
+
+
+
+    function fulfillRandomWords(
+        uint256 _requestId,
+        uint256[] calldata _randomWords
+    ) internal override {
+        require(s_requests[_requestId].exists, "request not found");
+        s_requests[_requestId].fulfilled = true;
+        s_requests[_requestId].randomWords = _randomWords;
+        emit RequestFulfilled(_requestId, _randomWords);
+    }
+   
+    modifier onlyowner() {
+      require(msg.sender == _owner);
+      _;
+    }
 }
